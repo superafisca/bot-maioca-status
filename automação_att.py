@@ -1,11 +1,7 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 import os
 import json
 import pytz
 import requests
-import shutil
 from datetime import datetime, timedelta
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -13,7 +9,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-# ========== CONFIGURAÇÕES TELEGRAM ==========
+# ========== CONFIG TELEGRAM ==========
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -29,9 +25,9 @@ def send_to_telegram(texto: str):
         if resp.status_code != 200:
             print(f"❌ Erro ao enviar Telegram: HTTP {resp.status_code} / {resp.text}")
         else:
-            print("✅ Mensagem enviada ao Telegram com sucesso.")
+            print("✅ Mensagem enviada ao Telegram.")
     except Exception as e:
-        print(f"❌ Exceção ao tentar enviar ao Telegram: {e}")
+        print(f"❌ Exceção ao enviar ao Telegram: {e}")
 
 # ========== LISTA DE LOJAS ==========
 lojas = [
@@ -49,8 +45,8 @@ lojas = [
     {"nome": "Maioca Alcindo",            "url": "https://www.ifood.com.br/delivery/belem-pa/maioca-alcindo---sorveteria-artesanal-umarizal/1763b6b7-b983-4ac8-bad6-d612a72ead05"},
 ]
 
-# ========== FUNÇÃO DE CHECAGEM ==========
-def checar_status_loja(driver, url: str, loja_nome: str) -> str:
+# ========== VERIFICAÇÃO DE STATUS ==========
+def checar_status_loja(driver, url, nome_loja):
     try:
         driver.get(url)
 
@@ -58,130 +54,31 @@ def checar_status_loja(driver, url: str, loja_nome: str) -> str:
             EC.presence_of_element_located((By.TAG_NAME, "body"))
         )
 
-        xpath_condicao = "//*[contains(text(),'Adicionar ao carrinho') or contains(text(),'Fechado')]"
-        try:
-            WebDriverWait(driver, 20).until(
-                EC.presence_of_element_located((By.XPATH, xpath_condicao))
-            )
-        except:
-            pass
-
-        html = driver.page_source
-        chave = html.lower()
-
+        chave = driver.page_source.lower()
         if "fechado" in chave and "adicionar ao carrinho" not in chave:
-            return "❌ FECHADA (detectou texto ‘Fechado’ no HTML)"
+            return "❌ FECHADA"
 
-        try:
-            btn = driver.find_element(By.XPATH, "//button[contains(text(),'Adicionar ao carrinho')]")
-            if btn.is_displayed() and btn.is_enabled():
-                return "✅ ABERTA (botão “Adicionar ao carrinho” disponível)"
-        except:
-            pass
-
-        try:
-            elem_json = driver.find_element(By.ID, "__NEXT_DATA__")
-            json_text = elem_json.get_attribute("textContent")
-            dados = json.loads(json_text)
-
-            restaurante = {}
-            if (
-                "props" in dados
-                and "pageProps" in dados["props"]
-                and "initialState" in dados["props"]["pageProps"]
-            ):
-                restaurante = (
-                    dados["props"]["pageProps"]
-                    .get("initialState", {})
-                    .get("restaurant", {})
-                    .get("details", {})
-                )
-
-            if not restaurante:
-                restaurante = (
-                    dados.get("props", {})
-                    .get("initialState", {})
-                    .get("restaurant", {})
-                    .get("details", {})
-                )
-
-            is_closed = restaurante.get("closed", None)
-            tz_loja = restaurante.get("timezone", "America/Belem")
-            try:
-                store_tz = pytz.timezone(tz_loja)
-            except:
-                store_tz = pytz.timezone("America/Belem")
-
-            agora = datetime.now(store_tz)
-            dia_map = {
-                0: "MONDAY", 1: "TUESDAY", 2: "WEDNESDAY",
-                3: "THURSDAY", 4: "FRIDAY", 5: "SATURDAY", 6: "SUNDAY"
-            }
-            hoje_str = dia_map[agora.weekday()]
-
-            if is_closed is True:
-                prox = restaurante.get("nextopeninghour", {})
-                if prox and "dayofweek" in prox:
-                    dias_pt = {
-                        "mon": "Seg", "tue": "Ter", "wed": "Qua",
-                        "thu": "Qui", "fri": "Sex", "sat": "Sáb", "sun": "Dom"
-                    }
-                    abertura_dia = dias_pt.get(prox["dayofweek"].lower(), prox["dayofweek"])
-                    return f"❌ FECHADA (JSON: próxima abertura {abertura_dia})"
-                return "❌ FECHADA (JSON: closed = true)"
-
-            if is_closed is False:
-                shifts = restaurante.get("shifts", [])
-                for turno in shifts:
-                    if turno.get("dayOfWeek", "").upper() == hoje_str:
-                        start_str = turno.get("start", None)
-                        dur = turno.get("duration", None)
-                        if not start_str or not isinstance(dur, int):
-                            continue
-                        h, m, s = map(int, start_str.split(":"))
-                        inicio = agora.replace(hour=h, minute=m, second=s, microsecond=0)
-                        fim = inicio + timedelta(minutes=dur)
-                        if inicio <= agora < fim:
-                            return f"✅ ABERTA (JSON: dentro do horário {start_str}→{fim.strftime('%H:%M:%S')})"
-                        else:
-                            return f"❌ FECHADA (JSON: turno hoje {start_str}→{fim.strftime('%H:%M:%S')}, mas fora do horário)"
-
-                return "❌ FECHADA (JSON: closed=false, mas sem turno hoje)"
-
-            raise ValueError(f"JSON: chave 'closed' inesperada: {is_closed!r}")
-
-        except Exception as e_json:
-            print(f"⚠️ Erro JSON: {e_json}")
-
-        if "fechado" in chave and "adicionar ao carrinho" not in chave:
-            return "❌ FECHADA (Fallback textual: encontrou ‘fechado’)"
         if "adicionar ao carrinho" in chave:
-            return "✅ ABERTA (Fallback textual: encontrou ‘Adicionar ao carrinho’)"
-        return "✅ ABERTA (Fallback final)"
+            return "✅ ABERTA"
 
-    except Exception as e_geral:
-        return f"❌ ERRO GERAL ({type(e_geral).__name__})"
+        return "❓ INDEFINIDO"
+    except Exception as e:
+        return f"❌ ERRO ({type(e).__name__})"
 
 # ========== RELATÓRIO ==========
-def gerar_relatorio_completo(driver) -> str:
+def gerar_relatorio(driver):
     fuso = pytz.timezone("America/Belem")
-    agora = datetime.now(fuso)
-    data_fmt = agora.strftime("%d/%m/%Y %H:%M:%S")
-    cabecalho = (
-        f"*Relatório de Status das Lojas*\n"
-        f"_Atualizado em: {data_fmt} (Fuso: America/Belem)_\n\n"
-    )
+    agora = datetime.now(fuso).strftime("%d/%m/%Y %H:%M:%S")
+    relatorio = f"*Relatório de Status das Lojas*\n_Atualizado em: {agora}_\n\n"
 
-    linhas = []
-    for idx, loja in enumerate(lojas, start=1):
+    for idx, loja in enumerate(lojas, 1):
         nome = loja["nome"]
         url = loja["url"]
-        print(f"({idx}/{len(lojas)}) Checando \"{nome}\" …")
+        print(f"({idx}/{len(lojas)}) Checando {nome}...")
         status = checar_status_loja(driver, url, nome)
-        linhas.append(f"*{nome}*: {status}")
+        relatorio += f"*{nome}*: {status}\n"
 
-    corpo = "\n".join(linhas)
-    return cabecalho + corpo
+    return relatorio
 
 # ========== EXECUÇÃO ==========
 if __name__ == "__main__":
@@ -195,16 +92,16 @@ if __name__ == "__main__":
         "Chrome/98.0.4758.102 Safari/537.36"
     )
 
-    # ✅ Usa Chrome pré-instalado no Render
+    # Caminhos fixos para ambiente do Render
     chrome_options.binary_location = "/usr/bin/google-chrome"
     chromedriver_path = "/usr/bin/chromedriver"
 
     driver = webdriver.Chrome(executable_path=chromedriver_path, options=chrome_options)
 
     try:
-        texto = gerar_relatorio_completo(driver)
+        texto = gerar_relatorio(driver)
         send_to_telegram(texto)
     except Exception as e:
-        print(f"❌ Erro ao rodar o bot: {e}")
+        print(f"❌ Erro geral: {e}")
     finally:
         driver.quit()
