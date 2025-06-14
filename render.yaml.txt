@@ -1,8 +1,0 @@
-services:
-  - type: cron
-    name: bot-lojas-maioca
-    runtime: python
-    repo: https://github.com/seunome/bot-maioca-status
-    schedule: "*/30 * * * *"
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python automação_att.py"
