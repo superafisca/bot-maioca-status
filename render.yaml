@@ -1,8 +1,9 @@
 services:
   - type: cron
-    name: bot-lojas-maioca
-    runtime: python
-    repo: https://github.com/seunome/bot-maioca-status
-    schedule: "*/30 * * * *"
+    name: bot-maioca-status        # nome do seu cron job no Render
+    runtime: python                # usa Python
+    repo: https://github.com/superafisca/bot-maioca-status
+    schedule: "*/30 * * * *"       # roda a cada 30 minutos
     buildCommand: "pip install -r requirements.txt"
     startCommand: "python automação_att.py"
+    workingDirectory: .
