@@ -2,14 +2,10 @@
 # -*- coding: utf-8 -*-
 
 import os
-import time
 import json
 import pytz
 import requests
 import shutil
-import subprocess
-import re
-
 from datetime import datetime, timedelta
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -189,9 +185,6 @@ def gerar_relatorio_completo(driver) -> str:
 
 # ========== EXECUÇÃO ==========
 if __name__ == "__main__":
-    subprocess.run("apt-get update", shell=True)
-    subprocess.run("apt-get install -y chromium chromium-driver", shell=True)
-
     chrome_options = Options()
     chrome_options.add_argument("--headless")
     chrome_options.add_argument("--disable-gpu")
@@ -202,9 +195,9 @@ if __name__ == "__main__":
         "Chrome/98.0.4758.102 Safari/537.36"
     )
 
-    chrome_path = shutil.which("chromium")
-    chromedriver_path = shutil.which("chromedriver")
-    chrome_options.binary_location = chrome_path
+    # ✅ Usa Chrome pré-instalado no Render
+    chrome_options.binary_location = "/usr/bin/google-chrome"
+    chromedriver_path = "/usr/bin/chromedriver"
 
     driver = webdriver.Chrome(executable_path=chromedriver_path, options=chrome_options)
 
