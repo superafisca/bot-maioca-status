@@ -96,7 +96,9 @@ if __name__ == "__main__":
     chrome_options.binary_location = "/usr/bin/google-chrome"
     chromedriver_path = "/usr/bin/chromedriver"
 
-    driver = webdriver.Chrome(executable_path=chromedriver_path, options=chrome_options)
+    from selenium.webdriver.chrome.service import Service
+service = Service("/usr/bin/chromedriver")
+driver = webdriver.Chrome(service=service, options=chrome_options)
 
     try:
         texto = gerar_relatorio(driver)
