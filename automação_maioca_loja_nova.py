@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os
 import time
-import json
-import pytz
 import requests
-import re
-from datetime import datetime, timedelta
+from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
@@ -16,7 +12,7 @@ from selenium.webdriver.support import expected_conditions as EC
 
 # ===== CONFIGURAÇÕES TELEGRAM =====
 TELEGRAM_TOKEN = "8064932590:AAFOu6KbR84kYs18SRSpiD5b8pd_vbL9Mv0"
-CHAT_ID = "7024048337"  # Substitua pelo seu chat_id real
+CHAT_ID = "7024048337"
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 
 def send_to_telegram(texto: str):
@@ -52,29 +48,25 @@ lojas = [
     {"nome": "Maioca Parauapebas",        "url": "https://www.ifood.com.br/delivery/parauapebas-pa/maioca-paraupebas---sorveteria-artesanal-cidade-jardim/94cd194c-0b0e-4094-89b7-17f6164cd1bb"},
 ]
 
-# ===== CONFIGURAÇÃO À PROVA DE CRASHES =====
+# ===== CONFIGURAÇÃO NAVEGADOR PARA RENDER =====
 def criar_navegador():
     chrome_options = Options()
     chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")  # Evita travamentos
+    chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("window-size=1280,800")
-    chrome_options.add_argument(
-        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/98.0.4758.102 Safari/537.36"
-    )
-    return webdriver.Chrome(options=chrome_options)
+    chrome_options.binary_location = "/usr/bin/chromium"
+    
+    driver = webdriver.Chrome(executable_path="/usr/bin/chromedriver", options=chrome_options)
+    return driver
 
-# ===== FUNÇÃO DE CHECAGEM (MESMA LÓGICA ORIGINAL) =====
+# ===== CHECAGEM DAS LOJAS =====
 def checar_status_loja(url: str, loja_nome: str) -> str:
     driver = criar_navegador()
     try:
         driver.get(url)
         WebDriverWait(driver, 25).until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-        
-        # Lógica original de verificação (ABERTA/FECHADA)
+
         html = driver.page_source.lower()
         if "fechado" in html and "adicionar ao carrinho" not in html:
             return "❌ FECHADA"
@@ -86,33 +78,27 @@ def checar_status_loja(url: str, loja_nome: str) -> str:
     except Exception as e:
         return f"❌ ERRO ({type(e).__name__})"
     finally:
-        driver.quit()  # Fecha o navegador!
+        driver.quit()
 
-# ===== RELATÓRIO + PAUSAS =====
+# ===== RELATÓRIO COM PAUSAS =====
 def gerar_relatorio_completo():
     cabecalho = f"*Relatório das Lojas Maioca*\n_Atualizado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}_\n\n"
     linhas = []
-    
+
     for loja in lojas:
-        try:
-            status = checar_status_loja(loja["url"], loja["nome"])
-            linhas.append(f"*{loja['nome']}*: {status}")
-            time.sleep(15)  # Pausa de 15s entre lojas (evita sobrecarga)
-        except Exception as e:
-            linhas.append(f"*{loja['nome']}*: ❌ ERRO TEMPORÁRIO")
-    
+        status = checar_status_loja(loja["url"], loja["nome"])
+        linhas.append(f"*{loja['nome']}*: {status}")
+        time.sleep(15)
+
     return cabecalho + "\n".join(linhas)
 
 # ===== LOOP PRINCIPAL =====
 if __name__ == "__main__":
     while True:
         try:
-            print("🔄 Iniciando verificação...")
             relatorio = gerar_relatorio_completo()
             send_to_telegram(relatorio)
         except Exception as e:
-            print(f"💥 Erro grave: {e}")
             send_to_telegram(f"⚠️ O script reiniciou. Erro: {str(e)}")
-        
-        print("⏳ Aguardando 30 minutos...")
-        time.sleep(30 * 60)  # Espera 30 minutos
+
+        time.sleep(30 * 60)
