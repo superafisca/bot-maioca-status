@@ -7,21 +7,23 @@ import pytz
 import requests
 from datetime import datetime, timedelta
 
-# ——— Configurações do Telegram ——————————————————————————————
+# ——— CONFIGURAÇÃO TELEGRAM ————————————————————————————————
 TELEGRAM_TOKEN   = "8064932590:AAFOu6KbR84kYs18SRSpiD5b8pd_vbL9Mv0"
 CHAT_ID          = "7024048337"
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 
-# User-Agent para evitar bloqueios
+# ——— HEADERS como browser real —————————————————————————————
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/116.0.5845.96 Safari/537.36"
-    )
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "pt-BR,pt;q=0.9"
 }
 
-# ——— Lista de 14 lojas ——————————————————————————————————————————
+# ——— LISTA COMPLETA DE 14 LOJAS —————————————————————————————
 lojas = [
     {"nome": "Maioca João Paulo",         "url": "https://www.ifood.com.br/delivery/belem-pa/maioca-joao-paulo---sorveteria-artesanal-marco/1dac79c4-12ac-4192-b2a9-73c47a732865"},
     {"nome": "Maioca Aeroporto",          "url": "https://www.ifood.com.br/delivery/belem-pa/maioca-aeroporto-belem---sorveteria-artesanal-val-de-caes/b1147043-e9ca-4e65-82cd-759abd3fe2a5"},
@@ -39,71 +41,73 @@ lojas = [
     {"nome": "Maioca Parauapebas",        "url": "https://www.ifood.com.br/delivery/parauapebas-pa/maioca-paraupebas---sorveteria-artesanal-cidade-jardim/94cd194c-0b0e-4094-89b7-17f6164cd1bb"},
 ]
 
-def send_to_telegram(texto: str):
-    payload = {"chat_id": CHAT_ID, "text": texto, "parse_mode": "Markdown"}
-    resp = requests.post(TELEGRAM_API_URL, data=payload, timeout=15)
-    if resp.status_code == 200:
+def send_to_telegram(text: str):
+    payload = {"chat_id": CHAT_ID, "text": text, "parse_mode": "Markdown"}
+    r = requests.post(TELEGRAM_API_URL, data=payload, timeout=15)
+    if r.status_code == 200:
         print("✅ Mensagem enviada ao Telegram.")
     else:
-        print(f"❌ Erro {resp.status_code}: {resp.text}")
+        print(f"❌ Telegram erro {r.status_code}: {r.text}")
 
 def checar_status_loja(loja: dict) -> str:
     nome, url = loja["nome"], loja["url"]
+    print(f"Checando {nome} …")
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
+        resp = requests.get(url, headers=HEADERS, timeout=20)
         if resp.status_code != 200:
             return f"❌ ERRO GERAL (HTTP {resp.status_code})"
-
         html = resp.text
-        m = re.search(
-            r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>',
-            html, re.DOTALL
-        )
-        if not m:
-            return "❓ STATUS DESCONHECIDO (JSON não encontrado)"
 
-        data = json.loads(m.group(1))
-        rest = data.get("props", {}).get("pageProps", {}).get("restaurante", {})
-        agora = datetime.now(pytz.timezone("America/Belem"))
-        closed = rest.get("closed")
-
-        if closed is True:
-            return "❌ FECHADA (JSON: closed=true)"
-        if closed is False:
-            shifts = rest.get("shifts", [])
-            hoje = agora.strftime("%A").upper()
-            for t in shifts:
-                if t.get("dayOfWeek", "").upper() == hoje:
-                    start = t.get("start"); dur = t.get("duration")
-                    if start and isinstance(dur, int):
-                        h, m, _ = map(int, start.split(":"))
-                        ini = agora.replace(hour=h, minute=m, second=0, microsecond=0)
-                        fim = ini + timedelta(minutes=dur)
-                        if ini <= agora < fim:
-                            return f"✅ ABERTA (JSON: {start}→{fim.strftime('%H:%M')})"
-                        else:
-                            return f"❌ FECHADA (JSON: turno {start}→{fim.strftime('%H:%M')})"
-            return "❌ FECHADA (JSON: closed=false, sem turno hoje)"
-
+        # 1) Tenta JSON Next.js
+        m = re.search(r'<script[^>]+id="__NEXT_DATA__"[^>]*>(.*?)</script>',
+                      html, re.DOTALL|re.IGNORECASE)
+        if m:
+            data = json.loads(m.group(1))
+            rest = data.get("props", {})\
+                       .get("pageProps", {})\
+                       .get("restaurante", {})
+            agora  = datetime.now(pytz.timezone("America/Belem"))
+            closed = rest.get("closed")
+            if closed is True:
+                return "❌ FECHADA (JSON: closed=true)"
+            if closed is False:
+                shifts = rest.get("shifts", [])
+                hoje   = agora.strftime("%A").upper()
+                for t in shifts:
+                    if t.get("dayOfWeek","").upper() == hoje:
+                        start, dur = t.get("start"), t.get("duration")
+                        if start and isinstance(dur,int):
+                            h,m,_ = map(int, start.split(":"))
+                            ini = agora.replace(hour=h, minute=m, second=0)
+                            fim = ini + timedelta(minutes=dur)
+                            if ini <= agora < fim:
+                                return f"✅ ABERTA (JSON: {start}→{fim.strftime('%H:%M')})"
+                            else:
+                                return f"❌ FECHADA (JSON: turno {start}→{fim.strftime('%H:%M')})"
+                return "❌ FECHADA (JSON: closed=false, sem turno hoje)"
+        # 2) Fallback por texto no HTML
+        low = html.lower()
+        if "adicionar ao carrinho" in low:
+            return "✅ ABERTA (texto encontrado)"
+        if "fechado" in low:
+            return "❌ FECHADA (texto encontrado)"
         return "❓ STATUS DESCONHECIDO"
+
     except Exception as e:
         return f"❌ ERRO GERAL ({type(e).__name__})"
 
 def main():
-    agora = datetime.now(pytz.timezone("America/Belem"))
-    data_fmt = agora.strftime("%d/%m/%Y %H:%M:%S")
+    fuso = pytz.timezone("America/Belem")
+    agora = datetime.now(fuso)
     header = (
         "*Relatório de Status das Lojas*\n"
-        f"_Atualizado em: {data_fmt} (Fuso: America/Belem)_\n\n"
+        f"_Atualizado em: {agora.strftime('%d/%m/%Y %H:%M:%S')}_ (Fuso: America/Belem)\n\n"
     )
-
-    linhas = []
-    for idx, loja in enumerate(lojas, start=1):
-        print(f"({idx}/{len(lojas)}) Checando {loja['nome']} …")
+    lines = []
+    for loja in lojas:
         status = checar_status_loja(loja)
-        linhas.append(f"*{loja['nome']}*: {status}")
-
-    texto = header + "\n".join(linhas)
+        lines.append(f"*{loja['nome']}*: {status}")
+    texto = header + "\n".join(lines)
     send_to_telegram(texto)
 
 if __name__ == "__main__":
