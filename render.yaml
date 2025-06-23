@@ -5,5 +5,5 @@ services:
     repo: https://github.com/superafisca/bot-maioca-status
     schedule: "*/30 * * * *"       # roda a cada 30 minutos
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "python automação_att.py"
+    startCommand: "python automação_maioca_loja_nova.py"
     workingDirectory: .
